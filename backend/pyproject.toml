@@ -17,14 +17,13 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 bcrypt = "^4.1.2"
 redis = "^5.0.1"
 python-docx = "^1.1.0"
-weasyprint = "^60.2"
 httpx = "^0.26.0"
 passlib = "^1.7.4"
 email-validator = "^2.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.4"
-pytest-asyncio = "^0.23.3
+pytest-asyncio = "^0.23.3"
 pytest-cov = "^4.1.0"
 
 [build-system]
