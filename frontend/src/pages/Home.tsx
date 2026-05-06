@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ProjectType, ComplexityLevel } from '../types';
-import { specApi, authApi } from '../services/api';
+import { ProjectType, ComplexityLevel, Specification } from '../types';
+import { specApi, exportApi, authApi } from '../services/api';
 
 const PROJECT_TYPES: { value: ProjectType; label: string }[] = [
   { value: 'Web', label: 'Веб-приложение' },
@@ -24,21 +24,54 @@ function Home() {
   const [type, setType] = useState<ProjectType>('Web');
   const [complexity, setComplexity] = useState<ComplexityLevel>(1);
   const [loading, setLoading] = useState(false);
+  const [generatedSpec, setGeneratedSpec] = useState<Specification | null>(null);
 
   const handleGenerate = async () => {
     setLoading(true);
+    setGeneratedSpec(null);
     try {
       const spec = await specApi.generate(type, complexity);
       const token = authApi.getToken();
       if (token) {
         navigate(`/specification/${spec.id}`);
       } else {
-        toast.success('ТЗ создано! Войдите, чтобы сохранить его');
+        setGeneratedSpec(spec);
+        toast.success('ТЗ создано! Зарегистрируйтесь, чтобы сохранять свои ТЗ');
       }
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Ошибка при создании ТЗ');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadDocx = async () => {
+    if (!generatedSpec) return;
+    try {
+      const blob = await exportApi.downloadDocx(generatedSpec.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${generatedSpec.title}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Ошибка при скачивании DOCX');
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!generatedSpec) return;
+    try {
+      const blob = await exportApi.downloadPdf(generatedSpec.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${generatedSpec.title}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Ошибка при скачивании PDF');
     }
   };
 
@@ -104,10 +137,64 @@ function Home() {
         </button>
       </div>
 
-      <div className="mt-8 text-center text-gray-500 text-sm">
-        <p>Гостевой режим: ТЗ создаётся без сохранения</p>
-        <p className="mt-1">Войдите, чтобы сохранять и редактировать свои ТЗ</p>
-      </div>
+      {!authApi.getToken() && !generatedSpec && (
+        <div className="mt-8 text-center text-gray-500 text-sm">
+          <p>Гостевой режим: ТЗ создаётся без сохранения в истории</p>
+          <p className="mt-1">Войдите, чтобы сохранять и редактировать свои ТЗ</p>
+        </div>
+      )}
+
+      {generatedSpec && (
+        <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">{generatedSpec.title}</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={downloadDocx}
+                className="bg-green-600 text-white px-3 py-1.5 rounded text-sm hover:bg-green-700"
+              >
+                DOCX
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="bg-red-600 text-white px-3 py-1.5 rounded text-sm hover:bg-red-700"
+              >
+                PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="text-sm text-gray-500 mb-4">
+            <span>Тип: {generatedSpec.type}</span>
+            <span className="mx-2">|</span>
+            <span>Сложность: {generatedSpec.complexity}</span>
+          </div>
+
+          {(generatedSpec.content as any).goal && (
+            <div className="mb-4">
+              <h3 className="font-medium text-gray-800 mb-1">Цель</h3>
+              <p className="text-gray-600">{(generatedSpec.content as any).goal}</p>
+            </div>
+          )}
+
+          {(generatedSpec.content as any).description && (
+            <div className="mb-4">
+              <h3 className="font-medium text-gray-800 mb-1">Описание</h3>
+              <p className="text-gray-600">{(generatedSpec.content as any).description}</p>
+            </div>
+          )}
+
+          <div className="text-center mt-4">
+            <a
+              href="/register"
+              className="text-blue-600 hover:underline text-sm"
+              onClick={(e) => { e.preventDefault(); navigate('/register'); }}
+            >
+              Зарегистрируйтесь, чтобы редактировать и сохранять ТЗ
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from app.models.models import Template
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.redis_service import cache_template, get_cached_template
 
 
 TEMPLATE_DATA: Dict[str, Dict[int, Dict[str, Any]]] = {
@@ -24,7 +25,7 @@ TEMPLATE_DATA: Dict[str, Dict[int, Dict[str, Any]]] = {
             "features": ["CRUD операции", "Базовая валидация"]
         },
         2: {
-            "goal": " Разработка функционального веб-приложения",
+            "goal": "Разработка функционального веб-приложения",
             "description": "Создание полнофункционального веб-приложения с расширенной логикой",
             "functional_requirements": [
                 "Регистрация и аутентификация",
@@ -166,7 +167,7 @@ TEMPLATE_DATA: Dict[str, Dict[int, Dict[str, Any]]] = {
             "description": "Игра с системой уровней и сохранением",
             "functional_requirements": [
                 "Система уровней",
-                "Сохраение прогресса",
+                "Сохранение прогресса",
                 "Боссы",
                 "Инвентарь"
             ],
@@ -205,7 +206,7 @@ TEMPLATE_DATA: Dict[str, Dict[int, Dict[str, Any]]] = {
             "functional_requirements": [
                 "Учет клиентов",
                 "Простой документооборот",
-                "От��ет��ость"
+                "Отчетность"
             ],
             "db_requirements": ["PostgreSQL", "2-3 сущности"],
             "tech_stack": ["React", "FastAPI", "PostgreSQL"],
@@ -303,7 +304,7 @@ async def init_templates(db: AsyncSession):
     result = await db.execute(select(Template))
     if result.scalars().first():
         return
-    
+
     for template_type, complexities in TEMPLATE_DATA.items():
         for complexity, structure in complexities.items():
             template = Template(
@@ -314,6 +315,32 @@ async def init_templates(db: AsyncSession):
             db.add(template)
     await db.commit()
 
+    # Warm up Redis cache with templates
+    for template_type, complexities in TEMPLATE_DATA.items():
+        for complexity, structure in complexities.items():
+            try:
+                await cache_template(template_type, complexity, structure)
+            except Exception:
+                pass  # Redis might not be available, that's ok
 
-def generate_specification(template_type: str, complexity: int) -> Dict[str, Any]:
-    return TEMPLATE_DATA.get(template_type, {}).get(complexity, TEMPLATE_DATA["Other"][complexity])
+
+async def generate_specification(template_type: str, complexity: int) -> Dict[str, Any]:
+    # Try Redis cache first
+    try:
+        cached = await get_cached_template(template_type, complexity)
+        if cached:
+            return cached
+    except Exception:
+        pass
+
+    # Fall back to in-memory
+    data = TEMPLATE_DATA.get(template_type, {}).get(complexity, TEMPLATE_DATA["Other"].get(complexity, {}))
+
+    # Seed cache for next time
+    if data:
+        try:
+            await cache_template(template_type, complexity, data)
+        except Exception:
+            pass
+
+    return data

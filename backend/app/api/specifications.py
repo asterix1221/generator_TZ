@@ -6,6 +6,7 @@ from app.models.models import Specification, SharedLink, Template
 from app.schemas.schemas import GenerateRequest, SpecificationCreate, SpecificationUpdate, SpecificationResponse, SharedLinkResponse
 from app.services.generator_service import generate_specification, init_templates
 from app.services.auth_service import decode_token
+from app.services.redis_service import check_rate_limit, get_rate_limit_ttl
 from typing import List
 import uuid
 import secrets
@@ -24,9 +25,21 @@ def get_current_user(request: Request) -> dict | None:
 @router.post("/generate", response_model=SpecificationResponse, status_code=status.HTTP_201_CREATED)
 async def generate_spec(
     request_data: GenerateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    ratelimit_key = current_user["sub"] if current_user else client_ip
+    is_allowed = await check_rate_limit(f"generate:{ratelimit_key}", max_requests=10, window=60)
+    if not is_allowed:
+        ttl = await get_rate_limit_ttl(f"generate:{ratelimit_key}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Слишком много запросов. Попробуйте через {ttl} секунд"
+        )
+    
     await init_templates(db)
     
     result = await db.execute(select(Template).where(
@@ -36,13 +49,9 @@ async def generate_spec(
     template = result.scalar_one_or_none()
     
     if not template:
-        spec_data = generate_specification(request_data.type, request_data.complexity)
-        spec_data["type"] = request_data.type
-        spec_data["complexity"] = request_data.complexity
+        spec_content = await generate_specification(request_data.type, request_data.complexity)
     else:
-        spec_data = dict(template.structure)
-        spec_data["type"] = template.type
-        spec_data["complexity"] = template.complexity
+        spec_content = dict(template.structure)
     
     title = f"ТЗ: {request_data.type} (сложность {request_data.complexity})"
     
@@ -52,7 +61,7 @@ async def generate_spec(
         user_id=user_uuid,
         template_id=template.id if template else None,
         title=title,
-        content=spec_data,
+        content=spec_content,
         type=request_data.type,
         complexity=request_data.complexity
     )
@@ -158,8 +167,16 @@ async def delete_specification(
     if str(spec.user_id) != current_user["sub"]:
         raise HTTPException(status_code=403, detail="Доступ запрещен")
     
-    await db.delete(spec)
-    await db.commit()
+    try:
+        # shared_links.spec_id NOT NULL -> удалить связанные ссылки до удаления spec
+        await db.execute(
+            SharedLink.__table__.delete().where(SharedLink.spec_id == spec_id)
+        )
+        await db.delete(spec)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении ТЗ: {e}")
 
 
 @router.post("/{spec_id}/share", response_model=SharedLinkResponse)

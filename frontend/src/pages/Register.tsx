@@ -19,8 +19,10 @@ function Register({ onRegister: _onRegister }: RegisterProps) {
     setLoading(true);
     try {
       await authApi.register(email, name, password);
-      toast.success('Аккаунт создан! Войдите в систему');
-      navigate('/login');
+      await authApi.login(email, password);
+      _onRegister();
+      toast.success('Аккаунт создан! Добро пожаловать');
+      navigate('/dashboard');
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Ошибка регистрации');
     } finally {

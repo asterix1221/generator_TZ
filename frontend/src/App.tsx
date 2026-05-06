@@ -44,7 +44,7 @@ function App() {
           />
           <Route 
             path="/specification/:id" 
-            element={isAuthenticated ? <SpecificationView /> : <Navigate to="/login" />} 
+            element={<SpecificationView />} 
           />
         </Routes>
       </Layout>

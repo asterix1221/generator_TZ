@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Specification, SpecificationContent } from '../types';
-import { specApi, exportApi } from '../services/api';
+import { specApi, exportApi, authApi } from '../services/api';
 
 function SpecificationView() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +14,13 @@ function SpecificationView() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState<SpecificationContent | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  const [isReadOnly, setIsReadOnly] = useState(true);
+
+  const token = authApi.getToken();
+
+  useEffect(() => {
+    setIsReadOnly(!token);
+  }, [token]);
 
   useEffect(() => {
     loadSpec();
@@ -28,14 +35,14 @@ function SpecificationView() {
       setContent(data.content);
     } catch (error: any) {
       toast.error('ТЗ не найдено');
-      navigate('/dashboard');
+      navigate('/');
     } finally {
       setLoading(false);
     }
   };
 
   const saveChanges = useCallback(async () => {
-    if (!id || !content) return;
+    if (!id || !content || isReadOnly) return;
     setSaving(true);
     try {
       await specApi.update(id, title, content);
@@ -45,15 +52,15 @@ function SpecificationView() {
     } finally {
       setSaving(false);
     }
-  }, [id, title, content]);
+  }, [id, title, content, isReadOnly]);
 
   useEffect(() => {
-    if (!spec) return;
+    if (!spec || isReadOnly) return;
     const timer = setTimeout(() => {
       saveChanges();
     }, 2000);
     return () => clearTimeout(timer);
-  }, [content, title]);
+  }, [content, title, spec, isReadOnly]);
 
   const handleShare = async () => {
     if (!id) return;
@@ -77,8 +84,8 @@ function SpecificationView() {
       a.download = `${title}.docx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error: any) {
-      toast.error('Ошибка экспорта');
+    } catch {
+      toast.error('Ошибка экспорта DOCX');
     }
   };
 
@@ -92,8 +99,8 @@ function SpecificationView() {
       a.download = `${title}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error: any) {
-      toast.error('Ошибка экспорта');
+    } catch {
+      toast.error('Ошибка экспорта PDF');
     }
   };
 
@@ -108,13 +115,13 @@ function SpecificationView() {
       a.download = `${title}-trello.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error: any) {
-      toast.error('Ошибка экспорта');
+    } catch {
+      toast.error('Ошибка экспорта Trello');
     }
   };
 
   const updateContent = (field: keyof SpecificationContent, value: string | string[]) => {
-    if (!content) return;
+    if (!content || isReadOnly) return;
     setContent({ ...content, [field]: value });
   };
 
@@ -129,7 +136,7 @@ function SpecificationView() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex justify-between items-start mb-6">
-        {editingTitle ? (
+        {editingTitle && !isReadOnly ? (
           <input
             type="text"
             value={title}
@@ -141,98 +148,121 @@ function SpecificationView() {
           />
         ) : (
           <h1
-            className="text-2xl font-bold cursor-pointer hover:text-blue-600"
-            onClick={() => setEditingTitle(true)}
+            className={`text-2xl font-bold ${isReadOnly ? '' : 'cursor-pointer hover:text-blue-600'}`}
+            onClick={() => !isReadOnly && setEditingTitle(true)}
           >
             {title}
           </h1>
         )}
-        {saving && <span className="text-sm text-gray-500">Сохранение...</span>}
+        {saving && !isReadOnly && <span className="text-sm text-gray-500">Сохранение...</span>}
+        {isReadOnly && (
+          <span className="text-sm text-gray-400 bg-gray-100 px-2 py-1 rounded">
+            Только чтение
+          </span>
+        )}
       </div>
 
+      {isReadOnly && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-sm text-yellow-800">
+          Вы просматриваете ТЗ в режиме чтения.{' '}
+          <a href="/login" className="underline">Войдите</a>, чтобы редактировать и сохранять изменения.
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex gap-2 mb-4">
-          <button onClick={downloadDocx} className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={downloadDocx} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
             DOCX
           </button>
-          <button onClick={downloadPdf} className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200">
+          <button onClick={downloadPdf} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
             PDF
           </button>
-          <button onClick={downloadTrello} className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200">
+          <button onClick={downloadTrello} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
             Trello JSON
           </button>
-          <button onClick={handleShare} className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200">
-            Поделиться
-          </button>
+          {!isReadOnly && (
+            <button onClick={handleShare} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">
+              Поделиться
+            </button>
+          )}
         </div>
         {shareLink && (
-          <div className="text-sm text-green-600 mb-4">
+          <div className="text-sm text-green-600 mt-4 bg-green-50 border border-green-200 rounded p-2">
             Ссылка скопирована: {window.location.origin}{shareLink}
           </div>
         )}
       </div>
 
       <div className="space-y-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Цель</h2>
+        <Section title="Цель" readonly={isReadOnly}>
           <textarea
             value={content.goal}
             onChange={(e) => updateContent('goal', e.target.value)}
             className="w-full border border-gray-300 rounded p-2"
             rows={2}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Описание</h2>
+        <Section title="Описание" readonly={isReadOnly}>
           <textarea
             value={content.description}
             onChange={(e) => updateContent('description', e.target.value)}
             className="w-full border border-gray-300 rounded p-2"
             rows={3}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Функциональные требования</h2>
+        <Section title="Функциональные требования" readonly={isReadOnly}>
           <textarea
             value={content.functional_requirements.join('\n')}
             onChange={(e) => updateContent('functional_requirements', e.target.value.split('\n'))}
             className="w-full border border-gray-300 rounded p-2"
             rows={5}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Требования к БД</h2>
+        <Section title="Требования к БД" readonly={isReadOnly}>
           <textarea
             value={content.db_requirements.join('\n')}
             onChange={(e) => updateContent('db_requirements', e.target.value.split('\n'))}
             className="w-full border border-gray-300 rounded p-2"
             rows={4}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Стек технологий</h2>
+        <Section title="Стек технологий" readonly={isReadOnly}>
           <textarea
             value={content.tech_stack.join('\n')}
             onChange={(e) => updateContent('tech_stack', e.target.value.split('\n'))}
             className="w-full border border-gray-300 rounded p-2"
             rows={3}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-medium mb-2">Список фич</h2>
+        <Section title="Список фич" readonly={isReadOnly}>
           <textarea
             value={content.features.join('\n')}
             onChange={(e) => updateContent('features', e.target.value.split('\n'))}
             className="w-full border border-gray-300 rounded p-2"
             rows={4}
+            readOnly={isReadOnly}
           />
-        </div>
+        </Section>
       </div>
+    </div>
+  );
+}
+
+function Section({ title, children, readonly }: { title: string; children: React.ReactNode; readonly: boolean }) {
+  return (
+    <div className={`bg-white rounded-lg shadow-md p-6 ${readonly ? 'opacity-90' : ''}`}>
+      <h2 className="text-lg font-medium mb-2">{title}</h2>
+      {children}
     </div>
   );
 }

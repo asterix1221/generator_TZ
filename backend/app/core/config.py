@@ -3,7 +3,7 @@ from functools import lru_cache
 import os
 
 
-class Settings(BaseSettings):+
+class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@db:5432/generator_tz"
     REDIS_URL: str = "redis://redis:6379/0"
     
